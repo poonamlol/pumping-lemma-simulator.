@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pumping Lemma Simulator</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#1d2433;--mut:#5b6478;--bd:#d9deea;--ac:#2f5597;--okbg:#e6f4ea;--ok:#1e7b34;--badbg:#fdecea;--bad:#b3261e;--code:#eef1f8;
+color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12151d;--card:#1b2030;--tx:#e8ebf3;--mut:#9aa3b8;--bd:#2f364b;--ac:#7fa6ee;--okbg:#17301f;--ok:#6fd08a;--badbg:#3a1b19;--bad:#ff9a92;--code:#232a3d;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12151d;--card:#1b2030;--tx:#e8ebf3;--mut:#9aa3b8;--bd:#2f364b;--ac:#7fa6ee;--okbg:#17301f;--ok:#6fd08a;--badbg:#3a1b19;--bad:#ff9a92;--code:#232a3d;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+main{max-width:900px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:8px 0 4px}h2{font-size:1.05rem;margin:0 0 8px;color:var(--ac)}
+.sub{color:var(--mut);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin:12px 0}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+label{display:flex;flex-direction:column;font-size:.85rem;color:var(--mut);gap:4px}
+select,input,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx)}
+input{width:90px}select{min-width:230px;max-width:100%}
+button{background:var(--ac);color:#fff;border-color:var(--ac);cursor:pointer;font-weight:600}
+button:hover{opacity:.9}
+.mono{font-family:ui-monospace,Consolas,"Courier New",monospace}
+.step{display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--bd)}.step:last-child{border:0}
+.n{flex:none;background:var(--ac);color:#fff;border-radius:50%;width:24px;height:24px;text-align:center;font-size:.8rem;line-height:24px;font-weight:700}
+.scroll{overflow-x:auto;max-height:340px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:5px 8px;border-bottom:1px solid var(--bd);text-align:left;white-space:nowrap}
+th{position:sticky;top:0;background:var(--card);color:var(--mut)}
+tr.r{cursor:pointer}tr.r:hover{background:var(--code)}tr.sel{background:var(--code)}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:.8rem;font-weight:700}
+.in{background:var(--okbg);color:var(--ok)}.out{background:var(--badbg);color:var(--bad)}
+.concl{border-left:4px solid var(--ac)}
+.hint{color:var(--mut);font-size:.85rem}
+.big{word-break:break-all;background:var(--code);padding:8px;border-radius:8px}
+</style>
+</head>
+<body>
+<main>
+<h1>Pumping Lemma Simulator</h1>
+<p class="sub">Adversarial model: give a pumping length p and the machine tries every legal split <span class="mono">xyz</span> to show the language is not regular.</p>
+
+<div class="card">
+<div class="row">
+<label>Language
+<select id="lang">
+<option value="anbn">L = { aⁿbⁿ | n ≥ 0 }  (not regular)</option>
+<option value="ab">L = (ab)*  (regular control)</option>
+</select></label>
+<label>Pumping length p (1 to 30)
+<input id="p" type="number" min="1" max="30" value="4"></label>
+<button id="run">Run simulation</button>
+</div>
+<p class="hint" id="err" style="margin:8px 0 0"></p>
+</div>
+
+<div id="out"></div>
+</main>
+
+<script>
+var MAXI = 5;
+var LANGS = {
+  anbn:{name:"L = { aⁿbⁿ | n ≥ 0 }",sdesc:"s = aᵖbᵖ",
+    mem:function(w){var m=/^(a*)(b*)$/.exec(w);return !!m && m[1].length===m[2].length;},
+    pick:function(p){return "a".repeat(p)+"b".repeat(p);}},
+  ab:{name:"L = (ab)*",sdesc:"s = (ab)ᵖ",
+    mem:function(w){return /^(ab)*$/.test(w);},
+    pick:function(p){return "ab".repeat(p);}}
+};
+var state = null;
+
+function short(w){
+  if(w==="") return "ε";
+  return w.length<=24 ? w : w.slice(0,10)+"…"+w.slice(-10)+" (len "+w.length+")";
+}
+function count(w,c){return w.split(c).length-1;}
+
+function run(){
+  var key=document.getElementById("lang").value, L=LANGS[key];
+  var p=parseInt(document.getElementById("p").value,10), err=document.getElementById("err");
+  if(!(p>=1 && p<=30)){err.textContent="Please enter an integer p between 1 and 30.";return;}
+  err.textContent="";
+  var s=L.pick(p), splits=[];
+  for(var xy=1;xy<=Math.min(p,s.length);xy++){
+    for(var xl=0;xl<xy;xl++){splits.push({x:s.slice(0,xl),y:s.slice(xl,xy),z:s.slice(xy)});}
+  }
+  splits.forEach(function(r,i){
+    r.n=i+1; r.i=null;
+    for(var k=0;k<=MAXI;k++){ if(!L.mem(r.x+r.y.repeat(k)+r.z)){r.i=k;break;} }
+  });
+  state={key:key,L:L,p:p,s:s,splits:splits,sel:0};
+  render();
+}
+
+function render(){
+  var st=state, L=st.L, sp=st.splits;
+  var broken=sp.filter(function(r){return r.i!==null;}).length, surv=sp.length-broken;
+  var h="";
+  h+='<div class="card"><h2>Steps</h2>';
+  var steps=[
+    "Pumping length supplied by user: <b>p = "+st.p+"</b>.",
+    "Choose a string in L with |s| ≥ p: <b>"+L.sdesc+"</b>. Here <span class='mono'>s = "+short(st.s)+"</span> (|s| = "+st.s.length+").",
+    "Rules for any legal split s = xyz: (1) |y| ≥ 1, (2) |xy| ≤ p, (3) x yⁱ z ∈ L for all i ≥ 0.",
+    "Enumerate every legal split: <b>"+sp.length+"</b> candidates = p(p+1)/2."+(st.key==="anbn"?" Because |xy| ≤ p, y lies inside the block of a’s, so y = aʲ with j ≥ 1 and pumping only changes the a-count.":""),
+    "Pump each split with i = 0 to "+MAXI+" and record the first i for which x yⁱ z leaves L (table below).",
+    "Worked example: click any row of the table, then change i to pump it yourself.",
+    "Conclusion (below)."
+  ];
+  steps.forEach(function(t,i){h+='<div class="step"><div class="n">'+(i+1)+'</div><div>'+t+'</div></div>';});
+  h+='</div>';
+
+  h+='<div class="card"><h2>Step 5: all legal splits</h2><div class="scroll"><table><thead><tr><th>#</th><th>x</th><th>y</th><th>z</th><th>first breaking i</th></tr></thead><tbody>';
+  sp.forEach(function(r,idx){
+    h+='<tr class="r mono'+(idx===st.sel?' sel':'')+'" data-i="'+idx+'"><td>'+r.n+'</td><td>'+short(r.x)+'</td><td>'+short(r.y)+'</td><td>'+short(r.z)+'</td><td>'+(r.i===null?'none (survives)':r.i)+'</td></tr>';
+  });
+  h+='</tbody></table></div></div>';
+
+  h+='<div class="card" id="detail"></div>';
+
+  h+='<div class="card concl"><h2>Step 7: Conclusion</h2>';
+  h+='<p style="margin:0 0 6px">Splits tested: <b>'+sp.length+'</b> &nbsp; Broken: <b>'+broken+'</b> &nbsp; Survive every pump: <b>'+surv+'</b></p>';
+  if(surv===0){
+    h+='<p style="margin:0">Every legal split fails for p = '+st.p+', so this p is not a valid pumping length. The user may pick any p, so no pumping length exists and <b>'+L.name+' is not regular</b> (proof by contradiction).</p>';
+  } else {
+    var v=sp.filter(function(r){return r.i===null;})[0];
+    h+='<p style="margin:0">Example surviving split: x = '+short(v.x)+', y = '+short(v.y)+', z = '+short(v.z)+'. The adversary cannot win here, which is consistent with '+L.name+' being <b>regular</b>.</p>';
+  }
+  h+='</div>';
+  document.getElementById("out").innerHTML=h;
+  document.querySelectorAll("tr.r").forEach(function(tr){
+    tr.addEventListener("click",function(){state.sel=parseInt(tr.getAttribute("data-i"),10);state.pumpI=null;render();});
+  });
+  detail();
+}
+
+function detail(){
+  var st=state, r=st.splits[st.sel], el=document.getElementById("detail");
+  var i = (st.pumpI!=null) ? st.pumpI : (r.i!==null ? r.i : 2);
+  var w=r.x+r.y.repeat(i)+r.z, inL=st.L.mem(w);
+  var h='<h2>Step 6: pump split #'+r.n+' yourself</h2>';
+  h+='<p style="margin:0 0 8px" class="mono">x = '+short(r.x)+' &nbsp; y = '+short(r.y)+' &nbsp; z = '+short(r.z)+'</p>';
+  h+='<div class="row"><label>Pump count i<input id="pi" type="number" min="0" max="12" value="'+i+'"></label></div>';
+  h+='<p style="margin:10px 0 4px">x y<sup>'+i+'</sup> z =</p><div class="big mono">'+short(w)+'</div>';
+  h+='<p style="margin:8px 0 0"><span class="tag '+(inL?'in':'out')+'">'+(inL?'in L':'not in L')+'</span> ';
+  if(st.key==="anbn"){h+=' a’s: <b>'+count(w,"a")+'</b>, b’s: <b>'+count(w,"b")+'</b>'+(inL?' (counts equal)':' (counts differ, so not aⁿbⁿ)');}
+  else{h+=inL?' still a repetition of “ab”':' no longer a repetition of “ab”';}
+  h+='</p>';
+  el.innerHTML=h;
+  document.getElementById("pi").addEventListener("input",function(e){
+    var v=parseInt(e.target.value,10);
+    if(v>=0&&v<=12){state.pumpI=v;detail();var f=document.getElementById("pi");f.focus();f.setSelectionRange(f.value.length,f.value.length);}
+  });
+}
+
+document.getElementById("run").addEventListener("click",run);
+document.getElementById("p").addEventListener("keydown",function(e){if(e.key==="Enter")run();});
+document.getElementById("lang").addEventListener("change",run);
+run();
+</script>
+</body>
+</html>
